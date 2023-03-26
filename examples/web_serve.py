@@ -1,33 +1,64 @@
-"""
-@jorjun Anno Vvii ☉ in ♓ ☽ in ♋
-License: MIT
-Description: Web API for moisture readings: http://<your-pi-host>:8080/
-"""
 from functools import partial
 import json
 import logging
 from aiohttp import web
 from grow.moisture import Moisture
 
+# Customize the JSON response function
 json_response = partial(web.json_response, dumps=partial(json.dumps, default=str))
+
+# Define the route table for the web server
 routes = web.RouteTableDef()
 
 
-@routes.get("/")  # Or whatever URL path you want
-async def reading(request):
-    data = {
-        "m1": meter[0].moisture,
-        "m2": meter[1].moisture,
-        "m3": meter[2].moisture,
+# Define the /moisture endpoint to get moisture data
+@routes.get("/moisture")
+async def get_moisture(request):
+    moisture_data = {
+        "moisture-1": meter[0].moisture,
+        "moisture-2": meter[1].moisture,
+        "moisture-3": meter[2].moisture,
     }
-    return json_response(data)
+    return json_response(moisture_data)
 
 
+# Define the /saturation endpoint to get saturation data
+@routes.get("/saturation")
+async def get_saturation(request):
+    saturation_data = {
+        "m1": meter[0].saturation,
+        "m2": meter[1].saturation,
+        "m3": meter[2].saturation,
+    }
+    return json_response(saturation_data)
+
+
+# Define the /range endpoint to get range data
+@routes.get("/range")
+async def get_range(request):
+    range_data = {  # Renamed to range_data to avoid conflict with the built-in function
+        "m1": meter[0].range,
+        "m2": meter[1].range,
+        "m3": meter[2].range,
+    }
+    return json_response(range_data)
+
+
+# Main execution starts here
 if __name__ == "__main__":
+    # Create a web application instance
     app = web.Application()
+
+    # Configure logging
     logging.basicConfig(level=logging.INFO)
+
+    # Add routes to the web application
     app.add_routes(routes)
-    meter = [Moisture(_+1) for _ in range(3)]
+
+    # Initialize moisture sensors
+    meter = [Moisture(_ + 1) for _ in range(3)]
+
+    # Run the web application on host 0.0.0.0 and port 8080 with custom log format
     web.run_app(
         app,
         host="0.0.0.0",
