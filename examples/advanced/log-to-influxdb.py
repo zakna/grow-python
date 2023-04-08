@@ -1,70 +1,48 @@
 import logging
 import time
-
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import WriteApi, SYNCHRONOUS
 from grow.moisture import Moisture
 
-
-# Setup logging
+# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Set up InfluxDB
-INFLUXDB_TOKEN = "1CDjgTM9hqWsqclEAFJdFPE3SZj6yY3v21SK-OJcxRMxPcvQTzV0_zkgesn0fmhJJSvnikkRGEqWFVomyZUCoA=="
-token = INFLUXDB_TOKEN
-org = "enviro"
-url = "http://unraid.local:8086"
+# InfluxDB settings
+TOKEN = "1CDjgTM9hqWsqclEAFJdFPE3SZj6yY3v21SK-OJcxRMxPcvQTzV0_zkgesn0fmhJJSvnikkRGEqWFVomyZUCoA=="
+ORG = "enviro"
+URL = "http://unraid.local:8086"
+BUCKET = "grow-4"
 
-# Create an InfluxDB client instance
-write_client = InfluxDBClient(url=url, token=token, org=org)
+# Initialize InfluxDB client and write API
+client = InfluxDBClient(url=URL, token=TOKEN, org=ORG)
+write_api = WriteApi(influxdb_client=client, write_options=SYNCHRONOUS)
 
-# Name of the bucket to write data to
-bucket = "grow-4"
+# Create moisture sensor instances
+meters = [Moisture(i + 1) for i in range(3)]
 
-# Create a synchronous write API instance
-write_api = WriteApi(influxdb_client=write_client, write_options=SYNCHRONOUS)
-
-# Initialize moisture sensors
-meter = [Moisture(_ + 1) for _ in range(3)]
-
-# the moisture value is zero until the first reading is taken
-moisture1 = meter[0].moisture
-moisture2 = meter[0].moisture
-moisture3 = meter[0].moisture
-time.sleep(5)
-moisture1 = meter[0].moisture
-moisture2 = meter[0].moisture
-moisture3 = meter[0].moisture
-
-# Main execution starts here
+# Main loop for reading and writing moisture and saturation values
 while True:
-    moisture1 = meter[0].moisture
-    moisture2 = meter[1].moisture
-    moisture3 = meter[2].moisture
-    logging.info(f"Writing data point {moisture1} to InfluxDB...")
-    # Create a data point using the Point class with the moisture measurement
-    point1 = (
-        Point("moisture-1")
-        # Add a field to the data point with its value set to the current iteration
-        .field("value", moisture1)
-    )
+    # Read moisture and saturation values and round to 3 decimal places
+    moisture_values = [round(meter.moisture, 3) for meter in meters]
+    saturation_values = [round(meter.saturation, 3) for meter in meters]
 
-    point2 = (
-        Point("moisture-2").field("value", moisture2)
-    )
+    # Write moisture values if they are non-zero
+    if 0 in moisture_values:
+        continue
+    else:
+        for i, moisture in enumerate(moisture_values, 1):
+            point = Point(f"moisture-{i}").field("value", moisture)
+            write_api.write(bucket=BUCKET, org=ORG, record=point)
+            logging.info(f"Wrote {moisture} moisture-{i} to InfluxDB")
 
-    point3 = (
-        Point("moisture-3").field("value", moisture3)
-    )
-
-    # Write the data point to the InfluxDB
-    write_api.write(bucket=bucket, org="enviro", record=point1)
-    logging.info(f"  - wrote {moisture1} to InfluxDB")
-    write_api.write(bucket=bucket, org="enviro", record=point2)
-    logging.info(f"  - wrote {moisture2} to InfluxDB")
-    write_api.write(bucket=bucket, org="enviro", record=point3)
-    logging.info(f"  - wrote {moisture3} to InfluxDB")
-    # Sleep for 1 second to separate each data point by a 1-second interval
-    time.sleep(5)
-
-    # Log the data point that was written to InfluxDB
+    # Write saturation values if they are not equal to 1.0
+    if 1.0 in saturation_values:
+        continue
+    else:
+        for i, saturation in enumerate(saturation_values, 1):
+            point = Point(f"saturation-{i}").field("value", saturation)
+            write_api.write(bucket=BUCKET, org=ORG, record=point)
+            logging.info(f"Wrote {saturation} saturation-{i} to InfluxDB")
+    # Wait for 60 seconds before reading and writing values again
+    logging.info("Waiting 60 seconds before reading and writing values again")
+    time.sleep(60)
