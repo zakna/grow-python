@@ -36,14 +36,24 @@ async def get_saturation(request):
 # Define the /range endpoint to get range data
 @routes.get("/range")
 async def get_range(request):
-    range_data = {  # Renamed to range_data to avoid conflict with the built-in function
+    range_data = {
         "m1": meter[0].range,
         "m2": meter[1].range,
         "m3": meter[2].range,
     }
     return json_response(range_data)
 
-
+@routes.get("/data")
+async def get_data(request):
+    data = {
+        "range": meter[0].range,
+        "moisture": meter[0].moisture,
+        "saturation": meter[0].saturation,
+        "history": meter[0].history,
+        "active": meter[0].active,
+        "new_data": meter[0].new_data
+    }
+    return json_response(data)
 # Main execution starts here
 if __name__ == "__main__":
     # Create a web application instance
