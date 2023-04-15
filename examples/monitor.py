@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-import logging
 import math
 import pathlib
 import random
 import sys
 import threading
+import logging
 import time
+from influxdb_client import InfluxDBClient, Point
+from influxdb_client.client.write_api import WriteApi, SYNCHRONOUS
 
 import ltr559
 import RPi.GPIO as GPIO
@@ -47,6 +49,48 @@ icon_channel = Image.open("icons/icon-channel.png").convert("RGBA")
 icon_backdrop = Image.open("icons/icon-backdrop.png").convert("RGBA")
 icon_return = Image.open("icons/icon-return.png").convert("RGBA")
 
+
+
+class InfluxDBWriter(threading.Thread):
+
+    def __init__(self, token, org, url, bucket, channels):
+        super().__init__()
+        self.token = token
+        self.org = org
+        self.url = url
+        self.bucket = bucket
+        self.channels = channels
+        self.client = InfluxDBClient(url=self.url, token=self.token, org=self.org)
+        self.write_api = WriteApi(influxdb_client=self.client, write_options=SYNCHRONOUS)
+        self.daemon = True
+
+    def run(self):
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        while True:
+            self.write_moisture_and_saturation_values()
+            time.sleep(10)
+
+    def write_moisture_and_saturation_values(self):
+        moisture_values = [round(channel.sensor.moisture, 3) for channel in self.channels]
+        logging.info(f"Moisture values: {moisture_values})")
+        saturation_values = [round(channel.sensor.saturation, 3) for channel in self.channels]
+        if 1.0 in saturation_values:
+            time.sleep(5)
+            saturation_values = [round(channel.sensor.saturation, 3) for channel in self.channels]
+
+        logging.info(f"Saturation values: {saturation_values})")
+
+        if 0 not in moisture_values:
+            for i, moisture in enumerate(moisture_values, 1):
+                point = Point(f"moisture-{i}").field("value", moisture)
+                self.write_api.write(bucket=self.bucket, org=self.org, record=point)
+                logging.info(f"Wrote {moisture} moisture-{i} to InfluxDB")
+
+        if 1.0 not in saturation_values:
+            for i, saturation in enumerate(saturation_values, 1):
+                point = Point(f"saturation-{i}").field("value", saturation)
+                self.write_api.write(bucket=self.bucket, org=self.org, record=point)
+                logging.info(f"Wrote {saturation} saturation-{i} to InfluxDB")
 
 class View:
     def __init__(self, image):
@@ -830,7 +874,7 @@ class Alarm(View):
 
     def render(self, position=(0, 0)):
         x, y = position
-        # Draw the snooze icon- will be pulsing red if the alarm state is True
+        # Draw the snooze icon - will be pulsing red if the alarm state is True
         #self._draw.rectangle((x, y, x + 19, y + 19), (255, 255, 255))
         r = 129
         if self._triggered and self._sleep_until is None:
@@ -858,7 +902,6 @@ class Alarm(View):
 
     def sleep(self, duration=500):
         self._sleep_until = time.time() + duration
-
 
 class ViewController:
     def __init__(self, views):
@@ -1042,6 +1085,9 @@ def main():
         Channel(2, 2, 2),
         Channel(3, 3, 3),
     ]
+    while channels[0].sensor.saturation == 1:
+        channels[0].update()
+        time.sleep(1)
 
     alarm = Alarm(image)
 
@@ -1055,15 +1101,25 @@ def main():
         GPIO.add_event_detect(pin, GPIO.FALLING, handle_button, bouncetime=200)
 
     config.load()
+    # InfluxDB settings
+    TOKEN = "1CDjgTM9hqWsqclEAFJdFPE3SZj6yY3v21SK-OJcxRMxPcvQTzV0_zkgesn0fmhJJSvnikkRGEqWFVomyZUCoA=="
+    ORG = "enviro"
+    URL = "http://unraid.local:8086"
+    BUCKET = "grow-4"
 
-    for channel in channels:
-        channel.update_from_yml(config.get_channel(channel.channel))
+
+
+    # for channel in channels:
+    #     channel.update_from_yml(config.get_channel(channel.channel))
 
     alarm.update_from_yml(config.get_general())
 
     print("Channels:")
     for channel in channels:
         print(channel)
+
+    for channel in channels:
+        channel.update()
 
     print(
         """Settings:
@@ -1121,6 +1177,8 @@ Low Light Value {:.2f}
         ]
     )
 
+    influxdb_writer = InfluxDBWriter(TOKEN, ORG, URL, BUCKET, channels)
+    influxdb_writer.start()
     while True:
         for channel in channels:
             config.set_channel(channel.channel, channel)
