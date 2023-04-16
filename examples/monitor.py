@@ -1109,8 +1109,8 @@ def main():
 
 
 
-    # for channel in channels:
-    #     channel.update_from_yml(config.get_channel(channel.channel))
+    for channel in channels:
+        channel.update_from_yml(config.get_channel(channel.channel))
 
     alarm.update_from_yml(config.get_general())
 
