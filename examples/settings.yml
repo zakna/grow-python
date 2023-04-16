@@ -15,7 +15,7 @@ channel2:
   pump_time: 2
   warn_level: 0.2
   watering_delay: 60
-  wet_point: 3
+  wet_point: 0.5
 channel3:
   auto_water: true
   dry_point: 27
@@ -24,7 +24,7 @@ channel3:
   pump_time: 2
   warn_level: 0.2
   watering_delay: 60
-  wet_point: 3
+  wet_point: 0.5
 general:
   alarm_enable: true
   alarm_interval: 2
