@@ -71,12 +71,12 @@ class InfluxDBWriter(threading.Thread):
             time.sleep(10)
 
     def write_moisture_and_saturation_values(self):
-        moisture_values = [round(channel.sensor.moisture, 3) for channel in self.channels]
+        moisture_values = [round(channel.sensor.moisture, 4) for channel in self.channels]
         logging.info(f"Moisture values: {moisture_values})")
-        saturation_values = [round(channel.sensor.saturation, 3) for channel in self.channels]
+        saturation_values = [round(channel.sensor.saturation, 4) for channel in self.channels]
         if 1.0 in saturation_values:
             time.sleep(5)
-            saturation_values = [round(channel.sensor.saturation, 3) for channel in self.channels]
+            saturation_values = [round(channel.sensor.saturation, 4) for channel in self.channels]
 
         logging.info(f"Saturation values: {saturation_values})")
 
@@ -86,11 +86,11 @@ class InfluxDBWriter(threading.Thread):
                 self.write_api.write(bucket=self.bucket, org=self.org, record=point)
                 logging.info(f"Wrote {moisture} moisture-{i} to InfluxDB")
 
-        if 1.0 not in saturation_values:
-            for i, saturation in enumerate(saturation_values, 1):
-                point = Point(f"saturation-{i}").field("value", saturation)
-                self.write_api.write(bucket=self.bucket, org=self.org, record=point)
-                logging.info(f"Wrote {saturation} saturation-{i} to InfluxDB")
+
+        for i, saturation in enumerate(saturation_values, 1):
+            point = Point(f"saturation-{i}").field("value", saturation)
+            self.write_api.write(bucket=self.bucket, org=self.org, record=point)
+            logging.info(f"Wrote {saturation} saturation-{i} to InfluxDB")
 
 class View:
     def __init__(self, image):
