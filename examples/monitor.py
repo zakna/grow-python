@@ -6,6 +6,8 @@ import sys
 import threading
 import logging
 import time
+
+import urllib3
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import WriteApi, SYNCHRONOUS
 
@@ -53,7 +55,7 @@ icon_return = Image.open("icons/icon-return.png").convert("RGBA")
 
 class InfluxDBWriter(threading.Thread):
 
-    def __init__(self, token, org, url, bucket, channels):
+    def __init__(self, token, org, url, bucket, channels, light):
         super().__init__()
         self.token = token
         self.org = org
@@ -61,37 +63,45 @@ class InfluxDBWriter(threading.Thread):
         self.bucket = bucket
         self.channels = channels
         self.client = InfluxDBClient(url=self.url, token=self.token, org=self.org)
-        self.write_api = WriteApi(influxdb_client=self.client, write_options=SYNCHRONOUS)
+        self.write_api = WriteApi(influxdb_client=self.client, write_options=SYNCHRONOUS, timeout=30)
         self.daemon = True
+        self.light = light
 
     def run(self):
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         while True:
             self.write_moisture_and_saturation_values()
-            time.sleep(10)
+            time.sleep(60)
 
     def write_moisture_and_saturation_values(self):
-        moisture_values = [round(channel.sensor.moisture, 4) for channel in self.channels]
-        logging.info(f"Moisture values: {moisture_values})")
-        saturation_values = [round(channel.sensor.saturation, 4) for channel in self.channels]
-        if 1.0 in saturation_values:
-            time.sleep(5)
+        try:
+            moisture_values = [round(channel.sensor.moisture, 4) for channel in self.channels]
+            logging.info(f"Moisture values: {moisture_values})")
             saturation_values = [round(channel.sensor.saturation, 4) for channel in self.channels]
+            if 1.0 in saturation_values:
+                time.sleep(5)
+                saturation_values = [round(channel.sensor.saturation, 4) for channel in self.channels]
 
-        logging.info(f"Saturation values: {saturation_values})")
+            logging.info(f"Saturation values: {saturation_values})")
 
-        if 0 not in moisture_values:
-            for i, moisture in enumerate(moisture_values, 1):
-                point = Point(f"moisture-{i}").field("value", moisture)
+            if 0 not in moisture_values:
+                for i, moisture in enumerate(moisture_values, 1):
+                    point = Point(f"moisture-{i}").field("value", moisture)
+                    self.write_api.write(bucket=self.bucket, org=self.org, record=point)
+                    logging.info(f"Wrote {moisture} moisture-{i} to InfluxDB")
+
+
+            for i, saturation in enumerate(saturation_values, 1):
+                point = Point(f"saturation-{i}").field("value", saturation)
                 self.write_api.write(bucket=self.bucket, org=self.org, record=point)
-                logging.info(f"Wrote {moisture} moisture-{i} to InfluxDB")
+                logging.info(f"Wrote {saturation} saturation-{i} to InfluxDB")
 
-
-        for i, saturation in enumerate(saturation_values, 1):
-            point = Point(f"saturation-{i}").field("value", saturation)
-            self.write_api.write(bucket=self.bucket, org=self.org, record=point)
-            logging.info(f"Wrote {saturation} saturation-{i} to InfluxDB")
-
+                lux = self.light.get_lux()
+                point = Point("lux").field("value", lux)
+                self.write_api.write(bucket=self.bucket, org=self.org, record=point)
+                logging.info(f"Wrote {lux} lux to InfluxDB")
+        except urllib3.exceptions.ReadTimeoutError as e:
+            logging.error(f"Error writing values to InfluxDB: {e}")
 class View:
     def __init__(self, image):
         self._image = image
@@ -1105,7 +1115,7 @@ def main():
     TOKEN = "1CDjgTM9hqWsqclEAFJdFPE3SZj6yY3v21SK-OJcxRMxPcvQTzV0_zkgesn0fmhJJSvnikkRGEqWFVomyZUCoA=="
     ORG = "enviro"
     URL = "http://unraid.local:8086"
-    BUCKET = "grow-4"
+    BUCKET = "grow"
 
 
 
@@ -1177,7 +1187,7 @@ Low Light Value {:.2f}
         ]
     )
 
-    influxdb_writer = InfluxDBWriter(TOKEN, ORG, URL, BUCKET, channels)
+    influxdb_writer = InfluxDBWriter(TOKEN, ORG, URL, BUCKET, channels,light)
     influxdb_writer.start()
     while True:
         for channel in channels:
